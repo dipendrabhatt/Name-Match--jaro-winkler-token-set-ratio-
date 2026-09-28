@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title> Name Match - (jaro-winkler + token-set-ratio)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --background: #0b1020;
+        --card: rgba(20, 29, 54, 0.88);
+        --border: rgba(148, 163, 184, 0.2);
+        --text: #eef2ff;
+        --muted: #aab5d1;
+        --blue: #7dd3fc;
+        --green: #34d399;
+        --yellow: #fbbf24;
+        --red: #fb7185;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top left, #1d315f 0, var(--background) 42rem);
+      }
+
+      main { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0; }
+      .eyebrow { color: var(--blue); font-size: .78rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+      h1 { margin: 10px 0 12px; font-size: clamp(2rem, 5vw, 4rem); line-height: 1; }
+      .intro { max-width: 700px; color: var(--muted); font-size: 1.05rem; line-height: 1.6; }
+      .card { margin-top: 28px; padding: 24px; border: 1px solid var(--border); border-radius: 24px; background: var(--card); box-shadow: 0 24px 80px rgba(0, 0, 0, .25); backdrop-filter: blur(12px); }
+      .inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      label { display: grid; gap: 8px; color: var(--muted); font-size: .9rem; font-weight: 700; }
+      input { width: 100%; padding: 14px 15px; border: 1px solid var(--border); border-radius: 12px; outline: none; color: var(--text); background: #0d152b; font: inherit; }
+      input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(125, 211, 252, .15); }
+      .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+      button { cursor: pointer; border: 1px solid var(--border); border-radius: 999px; padding: 8px 12px; color: var(--text); background: #182441; font: inherit; font-size: .82rem; }
+      button:hover { border-color: var(--blue); }
+      .results { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 14px; margin-top: 22px; }
+      .metric { padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: rgba(9, 15, 32, .7); }
+      .metric-name { color: var(--muted); font-size: .85rem; }
+      .metric-value { margin-top: 8px; font-size: 2rem; font-weight: 800; }
+      .match-card .metric-value { color: var(--blue); }
+      .bar { height: 8px; margin-top: 15px; overflow: hidden; border-radius: 99px; background: #263451; }
+      .bar span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #38bdf8, #818cf8); transition: width .25s ease; }
+      .details { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; color: var(--muted); font-size: .9rem; line-height: 1.5; }
+      .details strong { color: var(--text); }
+      .method { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: .9rem; line-height: 1.6; }
+      .method code { color: var(--blue); }
+      @media (max-width: 700px) { .inputs, .results, .details { grid-template-columns: 1fr; } main { padding: 32px 0; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">Banking information verification</div>
+      <h1>Name match calculator</h1>
+      <p class="intro">Compare an account holder name with a legal name using the same Jaro-Winkler and token-based method used by the application.</p>
+
+      <section class="card" aria-label="Name comparison">
+        <div class="inputs">
+          <label>Account holder name <input id="accountHolder" value="Sydney West" autocomplete="off" /></label>
+          <label>Legal name <input id="legalName" value="Sydnee West" autocomplete="off" /></label>
+        </div>
+
+        <div class="examples" aria-label="Examples">
+          <button data-account="Acme Corporation" data-legal="Acme Corporation">Full match</button>
+          <button data-account="Sydney West" data-legal="Sydnee West">Close match</button>
+          <button data-account="John Smith" data-legal="Oceanic Payments Ltd">No match</button>
+          <button data-account="Global-Trading Ltd." data-legal="Global Trading Ltd">Punctuation</button>
+        </div>
+
+        <div class="results" aria-live="polite">
+          <div class="metric match-card"><div class="metric-name">Overall result</div><div id="status" class="metric-value">—</div></div>
+          <div class="metric"><div class="metric-name">Jaro-Winkler</div><div id="jaro" class="metric-value">0.00%</div><div class="bar"><span id="jaroBar"></span></div></div>
+          <div class="metric"><div class="metric-name">Token similarity</div><div id="token" class="metric-value">0.00%</div><div class="bar"><span id="tokenBar"></span></div></div>
+        </div>
+
+        <div class="details">
+          <div>Combined score<br /><strong id="combined">0.00%</strong></div>
+          <div>Normalized names<br /><strong id="normalized">—</strong></div>
+        </div>
+
+        <div class="method">
+          <strong>Jaro-Winkler:</strong> compares the characters in both names and gives extra weight when the names share the same beginning. It is useful for spelling mistakes such as <em>Sydney</em> and <em>Sydnee</em>.<br />
+          <strong>Token similarity:</strong> splits each name into separate words and checks how many words are shared, regardless of word order. For example, <em>West Sydney</em> and <em>Sydney West</em> share the same tokens.<br />
+          The combined score is <code>(Jaro-Winkler × 50%) + (Token similarity × 50%)</code>.<br />
+          <strong>Full Match:</strong> 90% or higher &nbsp; <strong>Close Match:</strong> 70%–89% &nbsp; <strong>No Match:</strong> below 70%.
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      function normalizeName(value) {
+        return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+
+      function jaroSimilarity(first, second) {
+        if (first === second) return 1;
+        if (!first.length || !second.length) return 0;
+        const distance = Math.max(Math.floor(Math.max(first.length, second.length) / 2) - 1, 0);
+        const firstMatches = new Array(first.length).fill(false);
+        const secondMatches = new Array(second.length).fill(false);
+        let matches = 0;
+
+        for (let i = 0; i < first.length; i++) {
+          const start = Math.max(0, i - distance);
+          const end = Math.min(i + distance + 1, second.length);
+          for (let j = start; j < end; j++) {
+            if (secondMatches[j] || first[i] !== second[j]) continue;
+            firstMatches[i] = true;
+            secondMatches[j] = true;
+            matches++;
+            break;
+          }
+        }
+        if (!matches) return 0;
+
+        let transpositions = 0;
+        let secondIndex = 0;
+        for (let i = 0; i < first.length; i++) {
+          if (!firstMatches[i]) continue;
+          while (!secondMatches[secondIndex]) secondIndex++;
+          if (first[i] !== second[secondIndex]) transpositions++;
+          secondIndex++;
+        }
+        return (matches / first.length + matches / second.length + (matches - transpositions / 2) / matches) / 3;
+      }
+
+      function jaroWinkler(first, second) {
+        const jaro = jaroSimilarity(first, second);
+        let prefix = 0;
+        for (let i = 0; i < Math.min(4, first.length, second.length); i++) {
+          if (first[i] !== second[i]) break;
+          prefix++;
+        }
+        return jaro + prefix * 0.1 * (1 - jaro);
+      }
+
+      function tokenSetRatio(first, second) {
+        const firstTokens = new Set(first.split(' ').filter(Boolean));
+        const secondTokens = new Set(second.split(' ').filter(Boolean));
+        if (!firstTokens.size || !secondTokens.size) return 0;
+        let shared = 0;
+        for (const token of firstTokens) if (secondTokens.has(token)) shared++;
+        return (2 * shared) / (firstTokens.size + secondTokens.size);
+      }
+
+      function calculate() {
+        const account = normalizeName($('accountHolder').value);
+        const legal = normalizeName($('legalName').value);
+        const jaro = account && legal ? jaroWinkler(account, legal) : 0;
+        const token = account && legal ? tokenSetRatio(account, legal) : 0;
+        const combined = (jaro * 0.5) + (token * 0.5);
+        const status = !account || !legal ? 'NO_MATCH' : combined >= 0.9 ? 'FULL_MATCH' : combined >= 0.7 ? 'CLOSE_MATCH' : 'NO_MATCH';
+
+        $('jaro').textContent = `${(jaro * 100).toFixed(2)}%`;
+        $('token').textContent = `${(token * 100).toFixed(2)}%`;
+        $('combined').textContent = `${(combined * 100).toFixed(2)}%`;
+        $('status').textContent = status.replace('_', ' ');
+        $('normalized').textContent = account && legal ? `${account} ↔ ${legal}` : 'Enter both names';
+        $('jaroBar').style.width = `${jaro * 100}%`;
+        $('tokenBar').style.width = `${token * 100}%`;
+        $('status').style.color = status === 'FULL_MATCH' ? 'var(--green)' : status === 'CLOSE_MATCH' ? 'var(--yellow)' : 'var(--red)';
+      }
+
+      document.querySelectorAll('input').forEach((input) => input.addEventListener('input', calculate));
+      document.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => {
+        $('accountHolder').value = button.dataset.account;
+        $('legalName').value = button.dataset.legal;
+        calculate();
+      }));
+      calculate();
+    </script>
+  </body>
+</html>
